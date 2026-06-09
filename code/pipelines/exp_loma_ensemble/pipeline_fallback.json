@@ -1,0 +1,220 @@
+[
+    {
+        "task": "get_exif",
+        "comment": "EXIF for ALIKED+LightGlue fallback run",
+        "params": {
+            "input": "",
+            "output": "h_w_exif.json"
+        }
+    },
+    {
+        "task": "get_image_pair_exhaustive",
+        "comment": "Exhaustive pairs for fallback",
+        "params": {
+            "input": "",
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "rotate_matching_find_best",
+        "comment": "ALIKED 0/90/180/270 rotation detection (8192 kp, resize 1600)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "aliked",
+            "input": {
+                "image_pair": "image_pair.csv"
+            },
+            "output": {
+                "keypoints": "_rot_keypoints.h5",
+                "descriptions": "_rot_descriptions.h5",
+                "matches": "_rot_matches.h5",
+                "image_pair_csv": "image_pair.csv"
+            },
+            "sufficient_matching_num": 512,
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8192,
+                    "detection_threshold": 0.01,
+                    "nms_radius": 4
+                },
+                "preprocess_conf": {
+                    "resize": 1600
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 10,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "ALIKED+LightGlue full-image matching (resize 1600, 8192 kp)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "aliked",
+            "input": {
+                "image_pair": "image_pair.csv"
+            },
+            "output": {
+                "keypoints": "kp_aliked_full.h5",
+                "descriptions": "desc_aliked_full.h5",
+                "matches": "mt_aliked_full.h5"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8192,
+                    "detection_threshold": 0.01,
+                    "nms_radius": 4
+                },
+                "preprocess_conf": {
+                    "resize": 1600
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 40,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "Count ALIKED matches for crop region estimation",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "mt_aliked_full.h5"
+            },
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "sfm_mkpc",
+        "comment": "DBSCAN-based crop region estimation from matched keypoints",
+        "params": {
+            "input": {
+                "keypoints": "kp_aliked_full.h5",
+                "matches": "mt_aliked_full.h5"
+            },
+            "output": "crop_rects.json",
+            "thresh": 0.15,
+            "db_scan_param": {
+                "eps": 0.05,
+                "min_samples": 16
+            },
+            "mkpt_rect_parms": {
+                "crop_scale": [1.05, 1.05],
+                "inliner_rate_thresh": 0.2
+            }
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "ALIKED+LightGlue cropped matching (resize 1600, 8192 kp)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "aliked",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "crop_rects.json"
+            },
+            "output": {
+                "keypoints": "kp_aliked_crop.h5",
+                "descriptions": "desc_aliked_crop.h5",
+                "matches": "mt_aliked_crop.h5"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8192,
+                    "detection_threshold": 0.01,
+                    "nms_radius": 4
+                },
+                "preprocess_conf": {
+                    "resize": 1600
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 40,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "concat",
+        "comment": "Merge full-image and cropped ALIKED matches",
+        "params": {
+            "input": {
+                "keypoints": [
+                    "kp_aliked_full.h5",
+                    "kp_aliked_crop.h5"
+                ],
+                "matches": [
+                    "mt_aliked_full.h5",
+                    "mt_aliked_crop.h5"
+                ]
+            },
+            "output": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            }
+        }
+    },
+    {
+        "task": "rem_less_match_pair",
+        "comment": "Drop pairs below 100 verified matches",
+        "params": {
+            "input": "matches.h5",
+            "output": "matches.h5",
+            "th_matching_num": 100
+        }
+    },
+    {
+        "task": "ransac",
+        "comment": "MAGSAC++ fundamental matrix verification",
+        "params": {
+            "input": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            },
+            "output": {
+                "matches": "matches.h5",
+                "fms": "fms.pkl"
+            },
+            "min_matches": 0,
+            "ransac_params": {
+                "param1": 5,
+                "param2": 0.9999,
+                "maxIters": 50000
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "Final verified match counts",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "matches.h5"
+            },
+            "output": "image_pair.csv"
+        }
+    }
+]

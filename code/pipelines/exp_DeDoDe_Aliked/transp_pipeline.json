@@ -1,0 +1,125 @@
+[
+    {
+        "task": "get_image_pair_exhaustive",
+        "comment": "",
+        "params": {
+            "input": "",
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "transparent_crop",
+        "comment": "",
+        "params": {
+            "input": "image_pair.csv",
+            "output": "transparent_crop.json"
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "sfm_crop sift_LightGlue (imsize=4096) — keep SIFT for initial transparent filtering",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "sift",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "transparent_crop.json"
+            },
+            "output": {
+                "keypoints": "keypoints.h5",
+                "descriptions": "descriptions.h5",
+                "matches": "matches.h5",
+                "image_pair": "image_pair.csv"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8000,
+                    "nms_radius": 2,
+                    "detection_threshold": 0.0026
+                },
+                "preprocess_conf": {
+                    "resize": 4096
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 0,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "matches.h5"
+            },
+            "output": "image_pair.csv"
+        }
+    },
+
+    {
+        "task": "get_transparent_pair",
+        "comment": "",
+        "params": {
+            "input": "image_pair.csv",
+            "output": "image_pair.csv",
+            "k": 2
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "transparent_crop DeDoDe (784x784) with MNN",
+        "params": {
+            "matcher": "DeDoDe",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "transparent_crop.json"
+            },
+            "output": {
+                "keypoints": "keypoints.h5",
+                "descriptions": "descriptions.h5",
+                "matches": "matches.h5",
+                "image_pair": "image_pair.csv"
+            },
+            "dedode_args": {
+                "dedode_code_path": "__DEDODE_CODE_ROOT__",
+                "detector_weights": "__DEDODE_DETECTOR_PATH__",
+                "descriptor_weights": "__DEDODE_DESCRIPTOR_PATH__",
+                "descriptor_type": "B",
+                "num_keypoints": 10000,
+                "H": 784,
+                "W": 784
+            },
+            "keypoint_matching_args": {
+                "match_method": "mnn",
+                "mnn_threshold": 0.85,
+                "min_matches": 0,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "ransac",
+        "comment": "",
+        "params": {
+            "input": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            },
+            "output": "matches.h5",
+            "min_matches": 0,
+            "ransac_params": {
+                "param1": 1.0,
+                "param2": 0.9999
+            }
+        }
+    }
+]

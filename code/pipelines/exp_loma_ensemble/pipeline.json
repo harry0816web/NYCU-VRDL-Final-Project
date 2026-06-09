@@ -1,0 +1,142 @@
+[
+    {
+        "task": "get_exif",
+        "comment": "Read EXIF metadata for COLMAP camera initialisation",
+        "params": {
+            "input": "",
+            "output": "h_w_exif.json"
+        }
+    },
+    {
+        "task": "get_image_pair_exhaustive",
+        "comment": "Generate exhaustive image pairs",
+        "params": {
+            "input": "",
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "LoMa-B single-pass matching (4096 kp, no rotation search)",
+        "params": {
+            "matcher": "LoMa",
+            "input": {
+                "image_pair": "image_pair.csv"
+            },
+            "output": {
+                "keypoints": "kp_loma_b.h5",
+                "descriptions": "desc_loma_b.h5",
+                "matches": "mt_loma_b.h5"
+            },
+            "loma_args": {
+                "loma_code_path": "__LOMA_CODE_ROOT__",
+                "preset": "loma_B",
+                "weights_path": "__LOMA_WEIGHTS_PATH__",
+                "num_keypoints": 4096,
+                "filter_threshold": 0.1
+            },
+            "keypoint_matching_args": {
+                "num_keypoints": 4096,
+                "filter_threshold": 0.1,
+                "min_matches": 30,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "ALIKED+LightGlue sparse matching (resize 1600, 8192 kp)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "aliked",
+            "input": {
+                "image_pair": "image_pair.csv"
+            },
+            "output": {
+                "keypoints": "kp_aliked_lg.h5",
+                "descriptions": "desc_aliked_lg.h5",
+                "matches": "mt_aliked_lg.h5"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8192,
+                    "detection_threshold": 0.01,
+                    "nms_radius": 4
+                },
+                "preprocess_conf": {
+                    "resize": 1600
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 30,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "concat",
+        "comment": "Merge LoMa-B and ALIKED keypoints/matches",
+        "params": {
+            "input": {
+                "keypoints": [
+                    "kp_loma_b.h5",
+                    "kp_aliked_lg.h5"
+                ],
+                "matches": [
+                    "mt_loma_b.h5",
+                    "mt_aliked_lg.h5"
+                ]
+            },
+            "output": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            }
+        }
+    },
+    {
+        "task": "rem_less_match_pair",
+        "comment": "Drop pairs with fewer than 100 total matches",
+        "params": {
+            "input": "matches.h5",
+            "output": "matches.h5",
+            "th_matching_num": 100
+        }
+    },
+    {
+        "task": "ransac",
+        "comment": "MAGSAC++ fundamental matrix verification",
+        "params": {
+            "input": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            },
+            "output": {
+                "matches": "matches.h5",
+                "fms": "fms.pkl"
+            },
+            "min_matches": 0,
+            "ransac_params": {
+                "param1": 5,
+                "param2": 0.9999,
+                "maxIters": 50000
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "Write verified match counts back to pair CSV",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "matches.h5"
+            },
+            "output": "image_pair.csv"
+        }
+    }
+]

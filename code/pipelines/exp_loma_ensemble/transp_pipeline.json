@@ -1,0 +1,218 @@
+[
+    {
+        "task": "get_image_pair_exhaustive",
+        "comment": "Exhaustive pairs for transparent scene",
+        "params": {
+            "input": "",
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "transparent_crop",
+        "comment": "Compute transparent-object crop regions",
+        "params": {
+            "input": "image_pair.csv",
+            "output": "crop_rects.json"
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "SIFT+LightGlue initial pair scoring (resize 4096, 8000 kp)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "sift",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "crop_rects.json"
+            },
+            "output": {
+                "keypoints": "kp_sift_init.h5",
+                "descriptions": "desc_sift_init.h5",
+                "matches": "mt_sift_init.h5",
+                "image_pair": "image_pair.csv"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8000,
+                    "nms_radius": 2,
+                    "detection_threshold": 0.0026
+                },
+                "preprocess_conf": {
+                    "resize": 4096
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 0,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "Score SIFT matches for pair selection",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "mt_sift_init.h5"
+            },
+            "output": "image_pair.csv"
+        }
+    },
+    {
+        "task": "get_transparent_pair",
+        "comment": "Keep top-k=2 neighbours per image for ring ordering",
+        "params": {
+            "input": "image_pair.csv",
+            "output": "image_pair.csv",
+            "k": 2
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "LoMa-B on transparent crops (10000 kp) — primary matcher",
+        "params": {
+            "matcher": "LoMa",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "crop_rects.json"
+            },
+            "output": {
+                "keypoints": "kp_loma_tr.h5",
+                "descriptions": "desc_loma_tr.h5",
+                "matches": "mt_loma_tr.h5",
+                "image_pair": "image_pair.csv"
+            },
+            "loma_args": {
+                "loma_code_path": "__LOMA_CODE_ROOT__",
+                "preset": "loma_B",
+                "weights_path": "__LOMA_WEIGHTS_PATH__",
+                "num_keypoints": 10000,
+                "filter_threshold": 0.1
+            },
+            "keypoint_matching_args": {
+                "num_keypoints": 10000,
+                "filter_threshold": 0.1,
+                "min_matches": 0,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "LoMa match counts for ensemble blending",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "mt_loma_tr.h5"
+            },
+            "output": "counts_loma.csv"
+        }
+    },
+    {
+        "task": "matching",
+        "comment": "ALIKED+LightGlue for ensemble ordering (resize 2048, 8192 kp)",
+        "params": {
+            "matcher": "LightGlue",
+            "extractor": "aliked",
+            "input": {
+                "image_pair": "image_pair.csv",
+                "rects": "crop_rects.json"
+            },
+            "output": {
+                "keypoints": "kp_aliked_tr.h5",
+                "descriptions": "desc_aliked_tr.h5",
+                "matches": "mt_aliked_tr.h5"
+            },
+            "keypoint_detection_args": {
+                "extractor_conf": {
+                    "max_num_keypoints": 8192,
+                    "detection_threshold": 0.01,
+                    "nms_radius": 4
+                },
+                "preprocess_conf": {
+                    "resize": 2048
+                },
+                "dtype": "float32"
+            },
+            "keypoint_matching_args": {
+                "matcher_params": {
+                    "width_confidence": -1,
+                    "depth_confidence": -1,
+                    "mp": true
+                },
+                "min_matches": 40,
+                "verbose": false
+            }
+        }
+    },
+    {
+        "task": "count_matching_num",
+        "comment": "ALIKED match counts for ensemble blending",
+        "params": {
+            "input": {
+                "image_pair": "image_pair.csv",
+                "matches": "mt_aliked_tr.h5"
+            },
+            "output": "counts_aliked.csv"
+        }
+    },
+    {
+        "task": "transparent_ensemble_order",
+        "comment": "Rank-fusion ordering (LoMa 0.35 / ALIKED 0.65)",
+        "params": {
+            "input": {
+                "loma_counts_csv": "counts_loma.csv",
+                "aliked_counts_csv": "counts_aliked.csv"
+            },
+            "output": "image_pair.csv",
+            "loma_weight": 0.35,
+            "aliked_weight": 0.65
+        }
+    },
+    {
+        "task": "concat",
+        "comment": "Merge LoMa and ALIKED transparent keypoints/matches",
+        "params": {
+            "input": {
+                "keypoints": [
+                    "kp_loma_tr.h5",
+                    "kp_aliked_tr.h5"
+                ],
+                "matches": [
+                    "mt_loma_tr.h5",
+                    "mt_aliked_tr.h5"
+                ]
+            },
+            "output": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            }
+        }
+    },
+    {
+        "task": "ransac",
+        "comment": "MAGSAC++ filtering for transparent scenes (tighter threshold)",
+        "params": {
+            "input": {
+                "keypoints": "keypoints.h5",
+                "matches": "matches.h5"
+            },
+            "output": {
+                "matches": "matches.h5",
+                "fms": "fms.pkl"
+            },
+            "min_matches": 0,
+            "ransac_params": {
+                "param1": 1.0,
+                "param2": 0.9999,
+                "maxIters": 50000
+            }
+        }
+    }
+]
